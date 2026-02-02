@@ -4,10 +4,10 @@
 
 Context Hub bridges the gap between rapidly evolving APIs and LLM knowledge cutoffs. It's a repository of curated, LLM-optimized documentation and skills that AI agents (and humans) can search and retrieve via a CLI.
 
-Content is categorized by **tags**, not rigid types. Common tag conventions:
-- `docs` — API/SDK reference documentation (e.g., OpenAI Chat API, Stripe Payments)
-- `skill` — Reusable patterns and playbooks, including coding patterns, browser automation, and site-specific knowledge
-- Content can have multiple tags including both `docs` and `skill` when it serves both purposes
+There are two kinds of content, with a fundamental distinction:
+
+- **Docs** ("what to know") — API/SDK reference documentation, factual knowledge that fills knowledge cutoff gaps. Large, detailed, fetched on-demand for a specific task.
+- **Skills** ("how to do it") — Behavioral instructions, coding patterns, automation playbooks. Smaller, actionable, can be installed into agent skill directories for persistent availability.
 
 Each entry also has a **source** field (`official` | `maintainer` | `community`) for trust/quality signaling. Users control which sources agents see via `~/.chub/config.yaml`.
 
@@ -25,12 +25,52 @@ Agent/Human (consumes docs via stdout or -o file)
 Local folders (private/internal docs)                             ← local source
 ```
 
-The CLI supports **multiple sources** — both remote CDNs and local folders. Entries from all sources are merged. See "Multi-source support" below.
+The CLI supports **multiple sources** — both remote CDNs and local folders. Entries from all sources are merged.
 
 ## Design Decisions & Rationale
 
-### Why `get docs` / `get skills`?
-Docs ("what to know") and skills ("how to do it") have fundamentally different access patterns. Docs are large reference material fetched on-demand for a specific task. Skills are behavioral instructions that can be installed into agent skill directories. Separate subcommands make intent explicit and allow different behavior (e.g., skills may be installed to `.claude/skills/` in the future).
+### Why separate "docs" and "skills"?
+We initially treated all content uniformly — just tags, no rigid types. But docs and skills have fundamentally different access patterns:
+
+| | Docs | Skills |
+|---|---|---|
+| Purpose | Reference knowledge ("what to know") | Behavioral instructions ("how to do it") |
+| Size | Large (10K-50K+ tokens) | Small (<500 lines entry point) |
+| Lifecycle | Ephemeral, fetched per-task | Can be persistent, installed into agent |
+| Discovery | Agent explicitly searches and fetches | Agent can auto-discover from filesystem |
+| Install target | `.context/` or any file | `.claude/skills/`, `.cursor/skills/`, etc. |
+
+This distinction drove the `get docs` / `get skills` split. Tags still exist for filtering (`--tags openai`), but the doc/skill separation is structural — each entry directory contains `DOC.md` and/or `SKILL.md` as distinct files.
+
+### Why `get docs` / `get skills` (not just `get`)?
+We considered several approaches:
+1. `chub get <id>` with `--install` flag for skills — blurs intent
+2. `chub get <id>` / `chub install <id>` — different verbs for different actions
+3. `chub get docs <id>` / `chub get skills <id>` — explicit category in command
+4. `chub get-docs <id>` / `chub get-skills <id>` — hyphenated commands
+
+We chose (3) because: the verb "get" is correct for both (you're fetching content), the noun clarifies what you're getting, and it reads like natural English. Subcommands are well-supported by Commander.js.
+
+We rejected `install` as a separate command because piping to the right directory is trivial (`chub get skills <id> -o .claude/skills/<id>/SKILL.md`), and a config option for default output directories can handle it later.
+
+### Why DOC.md and SKILL.md (not just SKILL.md)?
+We considered using SKILL.md for everything since the Agent Skills spec is the format standard. But calling a 50K API reference "SKILL.md" is semantically misleading — agents that scan for skills would load doc descriptions into their system prompt (wasting ~100 tokens per doc entry), and might "activate" a doc when the user just wants to write code.
+
+Instead, each entry directory can contain either or both files. The `provides` field in the registry indicates what's available, and the CLI fetches the right file based on the command used.
+
+### Why `--lang` flag instead of positional argument?
+Originally: `chub get openai-chat python`. Changed to: `chub get docs openai-chat --lang python`.
+
+Reasons:
+1. Multi-id support (`chub get docs openai-chat stripe-payments`) would make a positional language argument ambiguous
+2. Language can be auto-inferred when an entry has only one — the flag is only needed for disambiguation
+3. Flags are self-documenting; a bare `python` after an id is ambiguous to readers
+
+### Why multi-id support?
+Agents often need multiple docs in one operation. Rather than looping, `chub get docs openai-chat stripe-payments` fetches both. Output is concatenated with `---` separators for stdout, or written as separate files when `-o` points to a directory.
+
+### Why one CLI, not two?
+We considered separate tools for docs and skills. Rejected because they share the same registry, config, sources, search, and cache infrastructure. Duplicating all of that for a different `get` verb isn't justified. One CLI with subcommands keeps the ecosystem simple.
 
 ### Why 5 commands?
 We started with 8 commands (search, list, info, get, pull, update, cache, languages) and trimmed to 5. `list` and `info` were merged into `search` (no query = list all, exact id = show detail). `languages` was dropped (search output already shows languages). `pull` (search+get+write) was dropped in favor of unix piping. `get` was split into `get docs` and `get skills` for explicit intent.
@@ -46,6 +86,11 @@ Soft-delete via `active: false` adds complexity for a rare case. If a doc is dep
 
 ### Why tags instead of rigid categories?
 Rather than rigid sub-types (`browser-skill`, `coding-skill`), entries use free-form tags: `["skill", "browser", "automation", "playwright"]` vs `["docs", "openai", "chat"]`. This is flexible — new categories emerge without schema changes. Content can have multiple category tags.
+
+### Why progressive disclosure?
+A monolithic 50K-token doc file wastes context. Instead, each entry is a directory with a small entry point (DOC.md or SKILL.md, ~500 lines max) that links to detailed reference files. The agent reads the overview first, then selectively loads only what it needs.
+
+The `--full` flag exists for when you want everything — it concatenates all files with `# FILE:` headers. But the default is the entry point only, optimizing for context window efficiency.
 
 ### Why hybrid data strategy?
 Three approaches were considered:
@@ -67,8 +112,16 @@ Env vars work but aren't persistent. A config file at `~/.chub/config.yaml` stor
 ### Why multi-source?
 Teams often have internal/proprietary docs alongside the public community registry. Rather than requiring everything be published to one CDN, the CLI supports multiple sources — remote CDNs and local folders. Each source has its own `registry.json`. Entries are merged, and IDs are namespaced only when there's a collision (e.g., `community/openai-chat` vs `internal/openai-chat`). Local sources read directly from the filesystem — no caching needed.
 
+We considered having the CLI talk to GitHub APIs for private repos but decided local folder checkouts are simpler and avoid auth complexity.
+
 ### Why namespace only on collision?
-Most IDs are unique across sources, so forcing `source/id` everywhere would add noise. Namespacing kicks in only when two sources define the same ID. Users can always use the explicit `source/id` form. On collision, `chub get bare-id` errors with a suggestion to use the namespaced form.
+Most IDs are unique across sources, so forcing `source/id` everywhere would add noise. Namespacing kicks in only when two sources define the same ID. Users can always use the explicit `source/id` form. On collision, `chub get docs bare-id` errors with a suggestion to use the namespaced form.
+
+### Why `provides` field (not derived from tags)?
+The registry has a `provides: ["doc", "skill"]` array per version entry, derived from which files actually exist in the directory (has DOC.md → "doc", has SKILL.md → "skill"). We don't derive this from tags because tags are free-form metadata — an entry tagged "docs" might not have a DOC.md yet, and vice versa. `provides` reflects the actual file structure.
+
+### Why content bundling (DOC.md + SKILL.md in one directory)?
+Content providers often have a doc and a skill for the same topic (e.g., Stripe API reference + Stripe integration guide). Rather than forcing these into separate registry entries, a single entry directory can contain both. The SKILL.md can reference its companion doc: `For full API reference, run: chub get docs stripe-payments`.
 
 ---
 
@@ -98,6 +151,11 @@ Most IDs are unique across sources, so forcing `source/id` everywhere would add 
 - `chub get skills playwright-login` — fetch SKILL.md from a skill entry
 - Error if entry doesn't provide the requested type: `"openai-chat" doesn't provide a skill. It has: doc`
 
+### Language inference
+- Entry has one language → auto-selected, no `--lang` needed
+- Entry has multiple languages, no `--lang` → error: "Multiple languages available: python, javascript. Specify --lang."
+- `--lang` applies to all ids in a multi-id command
+
 ### Output modes
 - **Default**: Human-friendly, colored terminal output
 - **`--json`**: Structured JSON to stdout (no color escapes)
@@ -117,6 +175,9 @@ chub get docs "$ID" --lang js -o .context/stripe.md
 
 # Fetch multiple docs at once
 chub get docs openai-chat stripe-payments -o .context/
+
+# Install a skill into Claude Code's skill directory
+chub get skills playwright-login -o .claude/skills/playwright-login/SKILL.md
 ```
 
 ### Human workflow example
@@ -126,6 +187,7 @@ chub search jwt-auth-pattern                   # Exact id → full detail
 chub get skills jwt-auth-pattern               # Read skill in terminal
 chub get skills jwt-auth-pattern -o .context/  # Save to file
 chub get docs openai-chat --lang py            # Read doc for Python
+chub get docs openai-chat --full               # Read doc + all references
 ```
 
 ---
@@ -169,6 +231,7 @@ description: OpenAI Chat API - completions, streaming, function calling
 metadata:
   language: python
   version: "1.52.0"
+  updated-on: "2026-01-15"
   source: maintainer
   tags: "docs,openai,chat"
 ---
@@ -284,7 +347,46 @@ output_format: "human"                        # Default output: "human" or "json
 
 **Priority for single-source mode:** `CHUB_BUNDLE_URL` env var > `config.yaml cdn_url` > hardcoded default
 
-**Local source folder structure:** Must contain `registry.json` at root with the same schema as the CDN registry. Doc files are read directly from the folder.
+**Local source folder structure:** Must contain `registry.json` at root with the same schema as the CDN registry. Content directories are read directly from the folder.
+
+---
+
+## Agent Skills Compatibility
+
+Content follows the [Agent Skills open standard](https://agentskills.io/specification), supported by Claude Code, Cursor, Codex, OpenCode, and 30+ agents. Both DOC.md and SKILL.md use the standard's frontmatter format (`name`, `description`, optional `metadata`).
+
+### How chub relates to the Agent Skills ecosystem
+
+The Agent Skills spec defines a **file format and directory structure** for skills. Tools like `npx skills` (Vercel) handle **git-based installation** of skill files. Neither provides versioned registry-based discovery or distribution.
+
+chub fills the missing layer:
+
+| Layer | Agent Skills spec | npx skills (Vercel) | chub |
+|---|---|---|---|
+| Format | SKILL.md with frontmatter | SKILL.md | SKILL.md + DOC.md |
+| Discovery | Local filesystem scan | `npx skills search` (git repos) | `chub search` (registry index) |
+| Distribution | None (copy files) | Git repos | CDN + local folders |
+| Versioning | None | None | Per-entry, per-language |
+| Multi-language | None | None | Yes |
+| Trust/quality | None | None | `source` field + config filtering |
+
+### Why adopt the standard?
+Makes chub content interoperable with the broader agent ecosystem. A skill fetched via `chub get skills` can be piped directly into any agent's skill directory and discovered natively — no format conversion needed.
+
+### How chub extends it
+The Agent Skills spec has no distribution, versioning, or discovery story. chub adds:
+- Versioned entries with language variants
+- Registry-based search and discovery over network
+- Multi-source aggregation (CDN + local folders)
+- Trust/quality filtering via `source` field
+- Progressive disclosure with `--full` flag
+- Separate DOC.md for reference knowledge (not part of the spec, but uses the same frontmatter format)
+
+### Docs vs Skills in the Agent Skills context
+The spec was designed for behavioral instructions. chub extends it to also cover reference documentation via DOC.md. The distinction matters because:
+- Skills installed to `.claude/skills/` have their descriptions loaded into every agent session (~100 tokens each). Installing 20 API docs as skills would waste 2K+ tokens.
+- Agents may "activate" a skill based on context. A 50K API reference shouldn't be auto-loaded because the user mentioned "Stripe."
+- Docs are fetched on-demand for a specific task. Skills can be persistent and always-available.
 
 ---
 
@@ -299,13 +401,13 @@ chub-first-draft/
 │   │   ├── index.js              # Commander setup, global --json, preAction cache hook
 │   │   ├── commands/
 │   │   │   ├── search.js         # search / list / info (all in one)
-│   │   │   ├── get.js            # fetch content
+│   │   │   ├── get.js            # get docs / get skills subcommands
 │   │   │   ├── update.js         # refresh registry / full bundle
 │   │   │   └── cache.js          # cache status / clear
 │   │   └── lib/
 │   │       ├── config.js         # Load config.yaml, merge env vars, defaults
 │   │       ├── cache.js          # Registry fetch, on-demand doc fetch, bundle extract
-│   │       ├── registry.js       # Load registry, search/filter/query
+│   │       ├── registry.js       # Load registry, search/filter/query, resolve paths
 │   │       ├── output.js         # Dual-mode output (human with chalk / JSON)
 │   │       └── normalize.js      # Language aliases (js→javascript, py→python)
 ├── .gitignore
@@ -320,22 +422,16 @@ chub-first-draft/
 - `tar` ^7 — Bundle extraction (for `--full` mode)
 - Node.js >= 18 (built-in `fetch`, no `node-fetch` needed)
 
-## Agent Skills Compatibility
+## Future considerations
 
-Content follows the [Agent Skills open standard](https://agentskills.io/specification), supported by Claude Code, Cursor, Codex, OpenCode, and 30+ agents. Both DOC.md and SKILL.md use the standard's frontmatter format (`name`, `description`, optional `metadata`).
-
-**Why adopt the standard?** Makes chub content interoperable with the broader agent ecosystem. A skill fetched via chub can be installed into any agent's skill directory and discovered natively.
-
-**How chub extends it:** The Agent Skills spec covers file format and directory structure but has no distribution, versioning, or discovery story. chub adds:
-- Versioned entries with language variants
-- Registry-based search and discovery over network
-- Multi-source aggregation (CDN + local folders)
-- Trust/quality filtering via `source` field
-
-**Docs vs Skills:** Both use the same frontmatter format, but `chub get docs` fetches DOC.md and `chub get skills` fetches SKILL.md. Docs are reference knowledge; skills are behavioral instructions. An entry directory can provide both.
+- **`skills_dir` / `docs_dir` config** — default output directories for skills and docs, so `chub get skills <id>` auto-writes to `.claude/skills/` without `-o`
+- **Agent detection** — auto-detect installed agents (Claude Code, Cursor, etc.) and write to the right skill directory
+- **`chub install`** — dedicated install command if the piping pattern proves too verbose
+- **Usage telemetry** — agents report which docs/skills they used, enabling quality signals beyond the `source` field
 
 ## Reference
 
 - Existing implementation (for patterns, not to copy): see `rp15-chub/context-hub/cli/`
 - Existing content (193+ API docs): see `rp15-chub/context-hub/libraries/`
 - Agent Skills specification: https://agentskills.io/specification
+- Vercel Skills CLI: https://github.com/vercel-labs/skills
