@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:na.myconnectwise.net)",
+      "Bash(unzip -l swagger25.0.5.zip)",
+      "Bash(powershell -Command \"Expand-Archive -Path ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger25.0.5.zip'' -DestinationPath ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger-extract'' -Force; Get-ChildItem ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger-extract'' -Recurse | Select-Object -First 30 | Format-Table Name, Length\")",
+      "Bash(powershell -Command \"Get-Item ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger25.0.5.zip'' | Select-Object Name, Length, LastWriteTime\")",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\'' | Select-Object Name, Length\")",
+      "Bash(powershell.exe -Command \"Expand-Archive -Path ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger25.0.5.zip'' -DestinationPath ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger-extract'' -Force; Write-Host ''Done''\")",
+      "Bash(cmd /c \"powershell -Command \"\"Expand-Archive -Path ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger25.0.5.zip'' -DestinationPath ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger-extract'' -Force; Write-Host Done\"\"\")",
+      "Bash(node -e \"const fs = require\\(''fs''\\); console.log\\(fs.existsSync\\(''C:/Users/Carl/context-hub/context-hub/swagger25.0.5.zip''\\) ? ''found'' : ''not found''\\)\")",
+      "Bash(dir \"C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\")"
+    ]
+  }
+}
