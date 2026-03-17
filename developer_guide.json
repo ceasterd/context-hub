@@ -1,0 +1,730 @@
+Obtaining your Keys
+We only support API Member and My Account based authentication for Integration Vendors.  Impersonation and Cookie Authentication are for internal only based integrations.  In rare cases impersonation may be the route to go.
+
+API Member Only *Recommended for 3rd parties
+Member Impersonation
+My Account
+Cookie Authentication
+Rate Limiting
+To strengthen the stability, security, and performance of our APIs, reasonable rate limits are enforced. This measure safeguards our system against excessive or unintended high-volume requests, ensuring a consistent and reliable experience for all users. The service monitors resource usage in real time. If your request volume approaches capacity limits, you may receive HTTP 429 (Too Many Requests) responses, indicating temporary throttling. These responses include a Retry-After header specifying the number of seconds to wait before re-attempting your request. If your integration currently sends over 1,000 requests per minute, it will likely experience rate limiting. 
+
+To avoid rate limits, we suggest that you optimize your integration by minimizing unnecessary API calls and using proper filtering, limiting the number of parallel requests, using bundled requests, as well as implementing intelligent retry mechanisms with exponential backoff, respecting the Retry-After header values.
+
+Example response body:
+
+    {
+    "error": "ConnectWiseAPI",
+    "message": "Too many requests. Please try again in 30 seconds."
+    }
+Example code for handling 429 response:
+
+def make_request_with_backoff(url, headers=None, max_retries=5):
+    retry_count = 0
+    wait_time = 30  # Start with default 30 second wait time
+    while retry_count < max_retries:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 429:  # Too Many Requests
+            retry_after = int(response.headers.get("Retry-After", wait_time))  # Use Retry-After if provided
+            print(f"Rate limit exceeded. Retrying in {retry_after} seconds...")
+            time.sleep(retry_after)  # Wait before retrying
+        else:
+            return response  # Return successful response or other errors
+        retry_count += 1
+        wait_time *= 2  # Exponential backoff (30, 60, 120, ...)
+    print("Max retries reached. Request failed.")
+    return None  # Return None if all retries fail
+ 
+
+Security
+When working with the ConnectWise PSA REST API, security is based on the Security Roles table within Manage.  This table determines each type of entity and the level of access associated.  We do not recommend requesting Admin access for an integration.  Instead, integrators are highly encouraged to only enable the security roles for access that they need.
+
+Click here to view our Security Role Matrix
+
+When looking at the REST API documentation, you may notice that some items are considered a Setup Table value.  These are denoted with the lock icon.  These endpoints will return an inquiry level of access without access to the table.  This matches the UI functionality in that you can create listings of available statuses and boards without having access to the setup table associated with those values.
+
+ 
+
+HTTP Methods
+POST
+Create an entity or any non-CRUD action
+GET
+Return entity or list of entities
+PUT
+Replace all fields on an entity with supplied fields
+PATCH
+Update specific fields on an entity
+DELETE
+Remove entity
+HTTP Response Statuses
+201 Created
+The response will be the record that was created as well as the path to it.
+204 NoContent
+Will be returned by successful delete requests
+400 Bad Request
+The request could not be understood by the server due to malformed syntax. The client SHOULD NOT repeat the request without modifications
+401 Unauthorized
+The supplied authentication is incorrect
+403 Forbidden
+Improper security role settings for the supplied authentication
+404 Not Found
+Resource URL not found, this could mean the record was deleted or moved
+405 Method Not Allowed
+This will occur if you try to use an HTTP method that is not supported by the URL specified
+409 Conflict
+Record possibly in use or another conflict with the record
+415 Unsupported Media Type
+This can occur when using the documents API if you are sending the file as a JSON object
+429 Too Many Requests
+This will occur if request volume exceeds capacity limits and will include a Retry-After header with a numeric value that indicates the number of seconds to wait before retrying (see Retry Policy below) 
+500 Server Error
+Server errors can occur oftentimes due to a network fault or other non-application-related error, however, In some cases, a 500 error may occur when another error message has not been defined for an error
+These errors should follow the retry logic we recommend and if it appears to be an undefined error, should be reported
+PSA Specific - Are you getting a 404 error or "Could not get any response" on cloud?  You may have incorrect authentication instead of the resource not being found.  To confirm, change your base URL from v4_6_release to your ConnectWise PSA version /201x_x/. 
+
+Formatting Each Method
+Get
+Get requests are used for finding both individual records or a listing of records.  In order to grab an individual entity you must specify an id within the request URL.
+
+https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/5000
+When requesting a grouping of records, do not include an id record.  Optionally include parameters at the end of the URL to instead grab a specific set of records.
+
+https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets?conditions=board/name="Integration"%20and%20status/name="new"&page=1&pageSize=10
+When looking at an endpoint, the parameters section will tell you which fields can be used to filter the request.  In addition to the below parameters, you can use the Fields and Columns to manipulate the response dataset.
+
+URL Max Length
+The HTTP standards document does not impost a max URL length.  However various browsers, as well as applications, have different limits in place.  In addition search engines favor URLs that are around 2000 characters.  As a URL grows in length it no longer remains user-friendly and becomes unusable or readable by users.  This causes issues with troubleshooting and leads to the overall confusion.  We recommend keeping the URL length of each request to a maximum of 2000 characters.  This will ensure there are no compatibility issues with various servers and configurations.  Please keep in mind that the max length of a domain name can reach 255 characters.  With that in mind, the safe max length of a URL would be around 1745 characters.  
+
+This can vary based on environment configurations.  There will often be times when the URL could be significantly longer.  There may also be one of the server configurations based on premise that restricts the URL to a lower length.  However, it is recommended to keep the URL length to a max of 2000 characters including the domain name.
+
+Query String Parameters
+Parameter	Description	Example	 
+conditions	Search results based on the fields returned in a GET	board/name="Integration"
+summary="xyz"
+board/id in (3, 2, 4)
+lastUpdated > [2016-08-20T18:04:26Z]
+Only fields returned in a GET request can be used	=, !=, <, <=, >, >=, contains, like, in, not
+childConditions	Allows searching arrays on endpoints that list childConditions under parameters	/company/contacts?childconditions=communicationItems/value like "john@Outlook.com" AND communicationItems/communicationType="Email"	=, !=, <, <=, >, >=, contains, like, not
+customFieldConditions	Allows searching custom fields when customFieldConditions is listed in the parameters	/company/contacts?customFieldConditions=caption="TomNumber" AND value !=null	=, !=, <, <=, >, >=, contains, like, not
+orderBy	Choose which field to sort the results by	contact/name asc	asc or desc
+fields	Limits which information is returned in the response	company/companies?fields=id,name,status/id	Not available on the reporting endpoints
+columns	Limits which information is returned in the response	system/reports/service?columns=id,summary,name	Only used for the Reporting Endpoints
+page	Used in pagination to cycle through results
+pageSize	Number of results returned per page (Defaults to 25)	Max Size = 1,000*
+*Max page size was increased to 1,000 in 2016.2.
+Conditions
+Strings	Must be surrounded by quotes	Summary = "This is my string" (Accepts *'s for Wild Cards)
+Integers	No formatting required	Board/Id = 123
+Boolean	No formatting is required but must be True or False	ClosedFlag = True
+Datetimes	Must be surrounded by square brackets	LastUpdated = [2016-08-20T18:04:26Z]
+Operators	<, <=, =, !=, >, >=, contains, like, in, not	Summary Not Contains "Low Priority"
+Logic Operators	Supported operators include:
+AND
+OR
+board/name="integration" and summary="xyz"
+board/name="integration" or board/name="professional services"
+
+Reference*	Must have a / followed by the field under the reference you would like to use	manufacturer/name
+Using the /Search endpoints
+If your request URL is going to be over 10,000 characters long you can instead use the /Search path for certain endpoints.  This allows you to enter the conditions in the body of the request.
+
+POST /v4_6_release/apis/3.0/service/tickets/search HTTP/1.1
+Host: YOURCONNECTWISESITE
+Authorization: Basic AUTHKEY=
+Content-Type: application/json
+
+Body:
+{
+     "conditions": "summary like 'test'"
+}
+Successful get requests will return a 200 status response and a content body of the record(s).
+
+Patch
+Patch requests enable the ability to update individual fields on an entity.  When formatting the request you can specify multiple fields to be updated.  When working with a patch, the entire object is part of an array and must be surrounded by square brackets as per the example below.  If you do not have the square brackets, you will run into errors.  In addition, when you are updating a reference, you can only update it through the use of unique values.  Many times Name is not considered unique.
+
+https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/5000
+[
+  {
+    "op": "string",
+    "path": "string",
+    "value": "string"
+  }
+]
+op	The update operation used in the request	add | replace | remove
+path	Pathway for the updated field (Case Sensitive)	summary
+company
+value	The new value if doing a replace
+Refer to escaping characters
+When working with custom fields, you must pass the entire array of custom fields.	String: "Here is my Summary"
+Object: { "identifier": "connectwise" }
+01
+[
+02
+    {
+03
+        "op": "replace",
+04
+        "path": "summary",
+05
+        "value": "New Summary"
+06
+    },
+07
+    {
+08
+        "op": "replace",
+09
+        "path": "company",
+10
+        "value": {
+11
+            "identifier": "New Company"
+12
+        }
+13
+    },
+14
+    {
+15
+       "op": "replace",
+16
+       "path": "customFields",
+17
+       "value": [
+18
+            {
+19
+                 "id": 5,
+20
+                 "caption": "CloudPlus",
+21
+                 "type": "Checkbox",
+22
+                 "entryMethod": "EntryField",
+23
+                 "numberOfDecimals": 0,
+24
+                 "value": false
+25
+            },
+26
+               {         
+27
+                 "id": 28,
+28
+                 "caption": "test",
+29
+                 "type": "Text",
+30
+                 "entryMethod": "List",
+31
+                 "numberOfDecimals": 0,
+32
+                 "value": "test"
+33
+            }
+34
+        ]
+35
+    }
+36
+]
+When updating an Object such as Company, you cannot specify a location inside of the object.  You have to replace the whole object like the example above. (Do not use "path":"company/identifier")  If you try to update the Object incorrectly, you may receive a false 200 message.
+
+Successful patch requests will return a 200 status response for success
+
+Delete
+Delete requests are used for removing records from the ConnectWise PSA system.  Please take care when removing items as they cannot be recovered.  The id for the record to be deleted needs to be included in the request URL.
+
+https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/5000
+Successful delete requests will return a 204 status response for No Content.  204 is a success response.
+
+Post
+Post is used when creating new records.  The body of the request must be sent in JSON format.  When sending a Post the response body will include the newly created record id as well as a Get request for the record.  If you pass a post request without filling out every possible value, the system will attempt to default all required information, and anything that does not require a value will be set to Null.
+
+Put
+Put requests are designed to completely replace an entity.  They work the in the same manner as a Post request with the exception that you must specify an already created entity in your URL.  When you use Put to update a record, any field that has not been specified will be overridden with the system defaults or set to Null.
+
+Escaping Characters
+When working with JSON, you may find that you need to use characters that require escaping.  This comes into play primarily when quotes are involved as we do not support many of the characters that require escaping.  Refer to the chart below:
+
+Character	Escaped	Displayed in the UI
+Double Quotes	\"	"
+Backslash	\\	\
+Tab	\t	Tabbed space equal to four spaces
+Backspace (Not Supported)	\b	An invisible character that doesn't take up any space
+Carriage Return (Not Supported)	\r	Single space which is returned as a space in the API instead of an escaped character
+Newline (Not Supported)	\n	Single space which is returned as a space in the API instead of an escaped character
+Form Feed (Not Supported)	\f	An invisible character that doesn't take up any space
+Applies to JSON Bodies Only: Please note that Single Quotes ', do not require escaping as they should not be used as a container for your strings.  If you are using single contains around string values, you must switch to doubles. 
+ URL Encoding is required when using conditions and other URL parameters that have symbols that would denote new query parameters or strings.
+
+Character	Formatting
+&	%26
+"	%22
+'	%27
+*	%2A
+%	%25
++	%2B
+[string]	[[]string]
+This applies to URL Parameters Only
+Partial Responses
+The API allows you to specify which information you want to be returned.  You do this by listing the request fields or columns on your endpoint URL.  Partial responses work for both GET and POST requests.
+
+Fields	company/companies?fields=company/id,company/name,phoneNumber
+Columns (Reporting API only)	system/reports/service?columns=id,summary,company/name
+Custom Fields
+Screens that have custom fields in the ConnectWise PSA UI will have an array of fields on the respective endpoint.  This array can be both queried and updated via the API.  When updating custom fields, you must pass in the entire array object, which means that you cannot patch a single custom field record.  Wondering if an endpoint supports custom fields?  Supported endpoints will have customFields(CustomFieldValue[]) listed at the end of the documentation.
+
+There are two methods of adding new custom fields to the ConnectWise PSA environment.  The first method will require access to the ConnectWise PSA thick client and the second method is available in the system/userDefinedFields endpoint within the REST API.
+
+Refer to the GET section on how to search custom fields.  Searching custom fields uses customFieldConditions instead of conditions.
+
+In order to access the custom fields via the thick client, navigate to System > Setup Tables > Custom fields,
+
+Field Options and Parameters
+Custom Fields.png
+
+Field	Description
+Field Caption	Enter a custom field caption for this required field; you are limited to 12 characters.
+Help Text	
+The text entered in this field will be displayed when you hover over the help button next to the custom field on the screen.  
+
+Note: This has a limit of 1000 characters, however only 512 characters will display on the opportunity screen.
+
+Field Type	
+Select one of the following options:
+
+Button This field allows you to add a hyperlink in the Button URL field.  There is a character limit of 1000.
+Checkbox This field is used for simple "Yes/No" or "On/Off" answers.  This will display as a checkbox. 
+Date This field displays a standard date picker field.
+Hyperlink This field displays a text entry field to enter a URL and will be accompanied by a button to visit the hyperlink.
+Number This field displays numerical values only.  You will be prompted with an error message that displays 'Option value must be a number' if the text is entered.  
+Percent This field displays numerical values only. You will be prompted with an error message that displays 'Option value must be a number' if the text is entered.
+Text This field displays alpha-numeric values. There is a character limit of 100.
+Text Area This field displays alpha-numeric values. There is a character limit of 1000. The List and Dropdown method of entry is unavailable for this option.
+Note: If you change a Date field to a Text or Text Area field, the date entered will save as plain text.
+
+If you change a Text or Text Area field to a Date field, the system may not automatically save the date. If this occurs, and it is a required field, the page-level validation will alert the user to enter a date in the field.
+
+Number of Decimals	This required field is only available for the Number and Percent Field Type.  You can add up to 5 decimal places. 
+Method of Entry	
+Select one of the following options:
+
+Entry Field This field is available for all field types.
+List (Drop-down) This field is available for the following field types: Number, Percent, and Text.  You are able to enter option values once this entry is selected. 
+Option (Radio) This field is available for the following field types: Number, Percent, and Text.  You are able to enter option values once this entry is selected. 
+Sequence #	Enter a sequence number.  This value must be between 1 and 50. 
+Required Field? 	Select this checkbox if you would like to make this a required custom field.  This will display as a blue asterisk. 
+Display on Screen?	Select this checkbox if you would like this to display on the Opportunities screen.  This is selected by default.
+Read Only?	This field is used for the API.  The Required Field checkbox cannot be marked for this field.
+Include on List View?	
+Select this checkbox if you would like to include this custom field in the My Opportunities list view screen.
+
+Note: There is a limit of 10 fields that can be displayed on the list view screen. You can have an unlimited number of custom fields, but the check box will not display if there are already 10 list items. You can unselect this check box at any time.
+
+Button URL	Enter the URL if you are using the Field Type Button. The field only appends URLs, no other form of entry will generate content.
+Select the Locations that will use this Custom Field	This is a required field.  Opportunities that have the specified location(s) will display this custom field.  Select at least one location where the custom field will be used.  
+Select the Departments that will use this Custom Field	This is not a required field. Opportunities that have the specified department(s) will display this custom field.
+ 
+
+Pagination
+Navigable
+The ConnectWise PSA API provides a vast wealth of information for developers to consume.  Most of the time, you will find that there is far more information than is needed for integration.  In order to ensure server availability, the API automatically sets the page size to 25 results.  The maximum page size for any request can be up to 1,000 records if properly specified in the request URL.
+
+pagesize	The number of results returned by each call.  Defaulted to 25 and has a maximum of 1,000.  These values cannot be changed.
+page	Starting with page 1, is the number of pages available based on the current pagesize.
+When using paging, the response will include a Link header that looks like this:
+
+1
+/v4_6_release/apis/3.0/company/companies?pagesize=50&page=1
+2
+link <https://staging.connectwisedev.com/v2017_3/apis/3.0/company/companies?pageSize=50&page=2>; rel="next", <https://staging.connectwisedev.com/v2017_3/apis/3.0/company/companies?pageSize=50&page=4>; rel="last"
+If you notice, the header contains two separate URLs in this instance.  The first one is "next" and the second one is "last".  These refer to the next set of results and the final set of results.  If we navigate to the next page, we will get some additional URLs in the response Link header.
+
+1
+/v4_6_release/apis/3.0/company/companies?pagesize=50&page=2
+2
+link <https://staging.connectwisedev.com/v2017_3/apis/3.0/company/companies?pageSize=50&page=3>; rel="next", <https://staging.connectwisedev.com/v2017_3/apis/3.0/company/companies?pageSize=50&page=1>; rel="prev", <https://staging.connectwisedev.com/v2017_3/apis/3.0/company/companies?pageSize=50&page=1>; rel="first", <https://staging.connectwisedev.com/v2017_3/apis/3.0/company/companies?pageSize=50&page=4>; rel="last"
+Now that we have navigated to the second page, we will find two additional URLs.  These are "prev" and "first" and in total we now have four including the original "next" and "last".
+
+First	This link will display the first page available based on the current page size
+Prev*	This link will display the previous page based on the current page position and page size
+Next*	This link will display the next available page based on the current page position and page size
+Last	This link will always display the final page available based on the current page size
+*We will not return the next or prev links if there isn't a next or prev respectively.
+
+In the above examples, we have four pages of results and depending on the page size, that number can change.  For instance, let's say we switch to the default page size of 25.  Instead of returning four pages, we actually get back 7 pages as there are only 160 results.
+
+The goal of pagination is not to pull every possible result, every single time.  Instead, it is designed to be in conjunction with a UI component to create a set of navigation links.
+
+clipboard_e29fb7e94d767bfdc2a4db21d834fef74.png
+
+Navigable Pagination closely follows RFC 5988.
+
+Forward-Only
+Released in 2018.5
+
+Unlike Navigable Pagination, forward-only requires that you pass in a header to identify the type of pagination you would like to use.  For instance, we now accept a header called pagination-type, and when you set that to forward-only you will get to utilize the new features.  In addition to the new header, there is a new query parameter called pageId.  The pageId is the record in which you would like to begin with for paging.
+
+If you do not include the new header in your request, it will use the default paging method of navigable. 
+The Page query parameter will be ignored with forward-only paging as all results are technically page 1.
+You cannot use an Order By query parameter with forward-only as it must be ordered by the ID.
+There will always be a link header in the response for the next pageId.
+The pageId query parameter is treated like an additional condition of Id > pageId.
+The following pageId in the header will be the last Id you got in the request.
+clipboard_ebcad30cfa48ce47932d2c0b47108b933.png
+
+clipboard_ef5cbb3427dc4eaba39453ea2dbcaf2c3.png
+
+ 
+
+Forward-Only pagination does not work with the Audit Trail endpoints at this time.
+
+Callbacks (Webhooks)
+ConnectWise PSA callbacks are payloads of information that are similar to webhooks.  When a record is saved within PSA, a summarized payload is sent to a specified location. 
+
+Levels and Types
+The REST APIs allow a more granular approach to callbacks.  Levels and types open the ability to report on specific boards or tickets without getting unnecessary results.
+
+Type	Level	Description
+Activities +
+Agreements +
+Companies +
+Contacts +
+Configurations +
+Invoice +
+Expense +
+Member +
+Opportunities +
+Product Catalog +
+Projects +
+Purchase Orders +
+Schedule Entries +
+Sites +
+Tickets +
+Time Entries +
+Configuring the Callbacks
+More information can be found within the REST API documentation Here with the endpoint system/callbacks.
+
+Fields
+
+Description
+
+Id	The database record id of the callback; is automatically assigned.
+Description	This is used to label the callback's usage.
+URL	
+This is the URL PSA will send the POST payload to. 
+
+Note: PSA appends the record id, and action is taken, to the specified callback URL.
+
+For example, a callback on ticket 7601, turns the callback URL into: https://mycallbacksite.com/e355a80bc2c107e32?7601&action=updated
+
+Typically, this is not an issue. However, when it is necessary to add custom parameters to your callback URL, this can cause a problem. For this reason, it is recommended that partners append &recordId= to the end of their callback URL, like: https://mycallbacksite.com/e355a80bc2c107e32&recordId=. This will ensure that the record id does not interfere with any custom parameters.
+
+Example:
+Desired callback URL: https://api.mycallbackendpoint.com?param1=5&param2=6
+
+Currently, a callback on ticket number 2475 turns the callback URL into:
+
+https://api.mycallbackendpoint.com?param1=5&param2=62475&action=updated
+
+Notice the value of param2 is now changed from 6 to 62475 because the ticket number was appended.
+
+To resolve this issue, change the desired callback URL to https://api.mycallbackendpoint.com?param1=5&param2=6&recordId=
+
+This results in the following URL:
+
+https://api.mycallbackendpoint.com?param1=5&param2=6&recordId=2475&action=updated
+
+ObjectId	The ObjectId should be the Id of whatever record you are subscribing to. This should be set to 1 when using a level of Owner. 
+Type	This is the specific type of record such as Company, Ticket, Contact, etc... See the associated table for all values.
+Level	The level is used to determine how granular the callback subscription will be.  See the associated table for all values.
+MemberId	This is a read-only value that shows who initially created the Callback.
+InactiveFlag	Used to determine if the callback is active and sending requests.
+_Info	This section has additional metadata about the record and is included on all API requests as read-only data.
+01
+POST /v4_6_release/apis/3.0/system/callbacks
+02
+{
+03
+     "id": 0,
+04
+     "description": "maxLength = 100",
+05
+     "url": "Sample string",
+06
+     "objectId": 0,
+07
+     "type": "Sample string",
+08
+     "level": "Sample string",
+09
+     "memberId": 0,
+10
+     "inactiveFlag": "false",
+11
+     "_info ": { "lastUpdated": "", "updatedBy": "" }
+12
+}
+Testing Callbacks
+Webhook.Site
+When testing the ConnectWise PSA callbacks there are a number of useful browser-based tools.  One of note is https://webhook.site.
+
+Simply use the New button to create a URL and then the Copy URL button to save the URL generated to your clipboard and add this as your ConnectWise PSA callback URL.
+
+https://webhook.site/xxxxxxx-xxxx-xxxx-af13-855ab85aebae
+When Callbacks Fail to POST to Target Host
+When a callback receives an error when attempting to POST the callback payload to the host specified in the callback URL, ConnectWise PSA will retry the POST for any 404, 409, 419, or 429 error responses. ConnectWise PSA retries twice, once two seconds after the initial POST attempt and again four seconds after the first retry attempt. Requests will timeout after five seconds.
+
+The system counts how many consecutive days the callback fails, and after three consecutive days of failed attempts, ConnectWise PSA will disable the callback
+
+Any 2xx response is considered successful.
+
+For partners with an on-premise instance of ConnectWise PSA, when troubleshooting why your callback POSTs are receiving error response from the remote host, logs for the service are found on the ConnectWise PSA frontend server at C:\Program Files\ConnectWise\ApiCallbackService\logs\server.log
+
+To enable verbose logging, change the minlevel value to minlevel=”Info” in the  C:\Program Files\ConnectWise\ApiCallbackService\ApiCallbackService.exe.nlog
+
+Verifying the Callback Source
+Callbacks contain a key_url in the metadata section that can be used to verify the source of the callback.  The key_url returns the signing key which then can be used in conjunction with the below code sample and the x-content-signature.
+
+1
+using (var sha = new SHA256Managed())
+2
+            {
+3
+                var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(sharedSecretKey));
+4
+                using (var hmac = new HMACSHA256(hash))
+5
+                {
+6
+                    return Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(jsonPayload)));
+7
+                }
+8
+            }
+Callback Changelog 
+Supported Version	Changes
+ConnectWise PSA 2020.2	Added callbacks for Configurations
+ConnectWise PSA 2016.6	Added callbacks for Invoice
+Added callbacks for Projects
+Added callbacks for Activities
+ConnectWise PSA 2016.5	Company Callbacks: Added Status and Type levels
+Contact Callbacks: Added Type level
+Ticket Callbacks: Added levels for tracking Project Tickets
+ConnectWise PSA 2016.4	Added callbacks for Opportunities
+ConnectWise PSA 2016.3	Added callbacks for Companies and Contacts
+ConnectWise PSA 2015.6	Added callbacks for Tickets
+Troubleshooting
+Troubleshooting with the REST API requires login access to the ConnectWise PSA UI.  Additionally the account being used to login, must have access to information relating to the account for integration.  In the case of the integration using API Members, the account accessing logs, must have the security roles to view members enabled.  This requirement has to do with the API Keys used for integrations, being tied to a specific member.
+
+Logging with the REST API must be specifically turned on and there is a time limit of 1440 minutes or 24 hours that can be recorded in a single session.  During this time, all requests that are processed by the server and are associated to the member you are running logs from, will appear in the UI.  If you are getting errors from the API and logs are not appearing, it may be a server side issue.
+
+To get started with logging, you will need to access the API Log tab found on every ConnectWise PSA member.  Open the UI and navigate to either System > Members or My Account and after you select the respective account, click on the API Logs tab.
+
+clipboard_e89a0f4557369e1913310d5ad38f55b88.png
+
+Once you have found the API Logs tab, the next step will be to press "Start Debug Mode" and from there, select the amount of time you would like to record for.
+
+clipboard_ef9f4d7b1792c1769f896add5d50d1b56.png
+
+Debugging will only run for a maximum of 1440 minutes per queue.  You can restart the timer at anytime by hitting "Start Debug Mode" again.
+
+Reading Logs
+clipboard_ea2140f5216f5ed663aa1b17823aafb9a.png
+
+Search	The search option will refresh the visible logs
+Start Debug Mode	This will kick off the recording process for the specified amount of time
+Download Logs	This will provide a shareable document that contacts all of the requests that were recorded since the last time the debug mode was started
+API Key Description	This is the public key that is associated to the logged API Call
+Start Time	This is the start time for the request which when clicked, will show you the request body details
+Duration (ms)	This is how long the request took to be completed in milliseconds
+Response	This will show the HTTP response code returned, please note that any error messages or underlined responses can be clicked in order to see further details
+Method	This is the HTTP Verb being used in the request
+URL	This is the full request endpoint URL that is being used and it can be used to see any conditions or extra fields not found in the request body
+Telerik's Fiddler
+The built in logging capabilities of Manage are limited in that if you want your request to show up, it must of first of been processed by the server.  What this means, is that if your request is timed out, malformed or one of many other ways in which the server rejects your request, you will not be able to use the built in tools for diagnostics.  There are other tools out there, besides our own built in tools, that will provide information about your requests.  We have found that although there are many similar programs, Fiddler has provided the easiest user experience and it is extremely accurate.
+
+Utility	Description	Download
+Fiddler by Telerik	Free Web Debugging Proxy	https://www.telerik.com/fiddler
+Fiddler must be run from the machine that is making the outbound requests.  It cannot be run locally if the API requests are not leaving your local machine from your control.  Once you have installed fiddler and have opened it for the first time you will see a window like the below screenshot.
+
+fiddler1.png
+
+Once you have managed to open Fiddler, there are a few settings that need to be changed in order for Fiddler to capture SSL.
+
+fiddler2.png
+
+After you have setup fiddler to be able to capture your requests, you simply need to send your API calls from your REST Client.  The calls will begin to show up in the left side of the screen and when you click on them, various options will appear that let you manipulate the records.  If you are using Postman to send your requests, you will also need to open Postman and go into the Settings section and turn off SSL Certificate Verification.
+
+Image Capture - 0075.png
+
+If you do not turn off certificate verification, Postman will return an error saying it couldn't get a response.  Once you have successfully made your request or successfully had an error occur, the fiddler screen will display a list of URLs.  Any that are marked in red will be errors that Fiddler bas detected.
+
+Image Capture - 0076.png
+
+If you click on the red entry you can drill into the details about the request and see more information on the error.
+
+Image Capture - 0077.png
+
+In this case we can see that the problem with the request is that company identifier is already in use.  We can now right click on the red item and unlock it for editing.  what this does is we can actually change the request right from within Fiddler.  Once we have then corrected the request we can right click on it again and this time we can use replay.  Replay will let you re-issue the command right from within Fiddler, without having to go back to your REST Client.
+
+Image Capture - 0078.png
+
+Error Handling
+When working with the API, it is important to understand best practices for handling errors.  In the case of ever error, it should be properly logged so it can be referenced later on.  Server errors are generally considered to be temporary errors and requests should be repeated.  If the request continues to occur, it should be submitted for review.  When it comes to Client errors, the request should be stopped immediately and whoever setup the integration, should be given the error message in order to troubleshoot.
+
+Retry Policy
+Overview
+
+An application that communicates with elements running in the cloud has to be resilient against transient faults that commonly occur in distributed environments. These faults include momentary loss of network connectivity, temporary service unavailability, timeouts when services are busy, and rate limiting imposed by service providers.
+
+These faults are typically self-correcting, and if the action that triggered a fault is repeated with an appropriate delay strategy, it's likely to succeed. For example, a database service processing a large number of concurrent requests might implement throttling that temporarily rejects further requests until its workload eases. An application encountering this throttling will fail to connect initially but may succeed after a well-designed retry attempt.
+
+Design Principles
+
+In cloud environments, transient faults are expected, and applications should be designed to handle them elegantly and transparently to minimize impacts on business operations. A modern retry policy should incorporate the following principles:
+
+Distinguish between retryable and non-retryable failures
+Implement intelligent delay strategies
+Respect service-provided backoff instructions
+Apply appropriate limits to prevent excessive retries
+Consider the operation context when configuring retry behavior
+Failure Handling Strategies
+
+When an application detects a failure in communicating with a remote service, it should handle the failure using one of these strategies:
+
+1. Cancel
+
+If the fault indicates that the failure isn't transient or is unlikely to be successful if repeated, the application should cancel the operation and report an exception. Examples include:
+
+Authentication failures (HTTP 401)
+Authorization failures (HTTP 403)
+Resource not found errors (HTTP 404)
+Bad request or validation failures (HTTP 400)
+Any other client errors (4xx range) except those explicitly identified as retryable
+2. Retry Immediately
+
+If the specific fault reported is unusual or rare, it might have been caused by exceptional circumstances such as a network packet becoming corrupted during transmission. In these cases, an immediate retry might be appropriate as the same failure is unlikely to be repeated.
+
+3. Retry with Exponential Backoff
+
+For common connectivity issues or busy services, implement exponential backoff:
+
+Start with a base delay (e.g., 100ms)
+For each subsequent retry, multiply the previous delay by a constant factor (typically 2)
+Apply a maximum delay cap to prevent extremely long waits
+Add jitter (randomization) to the calculated delay to prevent retry storms
+4. Retry with Service-Guided Backoff
+
+When services provide explicit guidance on retry timing:
+
+For HTTP 429 (Too Many Requests) responses, parse and respect the Retry-After header
+Retry-After specifies seconds, so wait that duration before retrying
+Fall back to exponential backoff if the service doesn't provide retry guidance
+Implementation Pattern
+
+Initialize retry policy with:
+  - Maximum retry attempts
+  - Base delay duration
+  - Backoff multiplier
+  - Maximum delay cap
+  - Jitter factor
+ 
+For each operation:
+  retries = 0
+  DO
+    Try to execute the operation
+    IF operation succeeds
+      Return success
+    ELSE IF operation fails with HTTP 429 AND Retry-After header exists
+      delay = Parse Retry-After header value
+    ELSE IF operation fails with retryable error
+      delay = baseDelay * (backoffMultiplier^retries) * (1 ± jitterFactor)
+      delay = min(delay, maxDelay)
+    ELSE
+      Return failure (non-retryable error)
+    END IF
+   
+    IF retries >= maxRetries
+      Return failure (retry limit exceeded)
+    END IF
+   
+    Wait for calculated delay
+    retries = retries + 1
+  WHILE retries < maxRetries
+Configuring Retry Policies
+
+The retry policy should be tuned to match the business requirements of the application and the nature of the operation:
+
+For Interactive Applications
+
+Use fewer retry attempts (2-3 typically)
+Use shorter base delays (50-100ms)
+Set lower maximum delay caps (2-5 seconds)
+Provide user feedback during retries for longer operations
+Consider showing appropriate messages to users when retries are exhausted
+For Background Operations
+
+Use more retry attempts (5-10 or more depending on criticality)
+Use longer base delays (200-500ms)
+Allow higher maximum delay caps (30-60 seconds)
+Implement dead-letter queues or failure logging for operations that exhaust retries
+Consider partial success handling for batch operations
+For Critical Operations
+
+Combine retry policies with circuit breakers to prevent cascading failures
+Implement fallback mechanisms when retries are exhausted
+Consider retry budgets to limit the overall retry rate across your system
+It's important to log all connectivity failures that cause a retry so that underlying problems with the application, services, or resources can be identified.
+
+500 Server Errors
+Numerous components on a network, such as DNS servers, switches, load balancers, and others can generate errors anywhere in the life of a given request. The usual technique for dealing with these error responses in a networked environment is to implement retries in the client application. This technique increases the reliability of the application and reduces operational costs for the developer.
+
+400 Client Errors
+A 400 error means that the request isn't valid.  In the case of a 400 error you should stop the requests and analyze the results in order to resolve the issue.  Do not attempt to retry the request.
+
+REST SDK Downloads
+For more information please visit our SDK Section.
+
+Document API
+When working with the Document API, please use the uploaded sample provided with the following endpoint to proceed with testing.
+
+GET https://ConnectWiseSite/v4_6_release...s/uploadsample
+
+The response is an HTML template that shows each of the settings that can be selected.  This form should help to design your own code and mimic functionality.
+
+ clipboard_e1d56cd4386ffef346995a6f8258a8ced
+
+When making calls to the ConnectWise PSA API, we have a URL that will give you the exact codebase to target in place of v4_6_release.  This is useful to see if someone is on a cloud environment programmatically.  Additionally, the request can be routed directly to the correct PSA version for the partner without it going through another source.
+
+Calling Company Info
+"https://" + ConnectWiseSite + "/login/companyinfo/" + LoginCompanyId
+https://na.myconnectwise.net/login/companyinfo/connectwise
+Response
+{  
+   "CompanyName":"ConnectWise",
+   "Codebase":"v2017_3/",
+   "VersionCode":"v2017.3",
+   "VersionNumber":"v4.6.38842",
+   "CompanyID":"CW",
+   "IsCloud":"True" *Added in 2016.5
+}
+API Request URL Format
+"https://" + ConnectWiseSite + "/" + codebase + "apis/3.0/company/companies"
+https://api-my.myconnectwise.net/v2017_3/apis/3.0/company/companies
+Cloud vs Premise
+A cloud environment will return a codebase with the PSA version.  On-Premise does not use URL redirection and will return v4_6_release/.  If your returned codebase contains anything other than v4_6_release/, you will need to ensure your request is prefixed by API-
+
+Cloud URLs
+These are the most commonly used URLs for the cloud.
+
+https://na.myconnectwise.net
+https://eu.myconnectwise.net
+https://au.myconnectwise.net
+https://aus.myconnectwise.net
+https://za.myconnectwise.net
+https://staging.connectwisedev.com
+CompanyTest Authentication
+HomeConnectWise PSAConnectWise AutomateConnectWise ScreenConnectConnectWise CPQDeveloper CommunityFAQClient ID
+© 2024 ConnectWise. All Rights Reserved.

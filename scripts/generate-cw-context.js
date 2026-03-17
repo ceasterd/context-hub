@@ -2,285 +2,207 @@
 /**
  * generate-cw-context.js
  *
- * Generates a ConnectWise Manage API reference library for chub (context-hub)
- * from the ConnectWise swagger.json zip file.
+ * Generates a ConnectWise Automate API reference library for chub (context-hub).
+ * Source: ReDoc-generated HTML files inside swagger25.0.5.zip
+ * Each HTML file (Tickets.html, Company.html, etc.) contains an embedded
+ * __redoc_state object with the full OpenAPI spec for that module.
  *
- * Usage (run from repo root in PowerShell or CMD):
+ * Usage (run from repo root in PowerShell):
  *   node scripts/generate-cw-context.js
  *
  * Output:
  *   quotametics-context/content/   ← source content
  *   quotametics-context/dist/      ← built registry (pointed to by chub config)
- *
- * After running, use:
- *   chub search connectwise
- *   chub get quotametics/connectwise-service
  */
 
-'use strict';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { execSync } = require('child_process');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const REPO_ROOT = path.resolve(__dirname, '..');
-const ZIP_PATH = path.join(REPO_ROOT, 'swagger25.0.5.zip');
-const EXTRACT_DIR = path.join(REPO_ROOT, 'swagger-extract');
-const OUTPUT_DIR = path.join(REPO_ROOT, 'quotametics-context');
-const CONTENT_DIR = path.join(OUTPUT_DIR, 'content');
-const DIST_DIR = path.join(OUTPUT_DIR, 'dist');
-const CHUB_CONFIG_DIR = path.join(os.homedir(), '.chub');
+const REPO_ROOT    = path.resolve(__dirname, '..');
+const ZIP_PATH     = path.join(REPO_ROOT, 'swagger25.0.5.zip');
+const EXTRACT_DIR  = path.join(REPO_ROOT, 'swagger-extract');
+const OUTPUT_DIR   = path.join(REPO_ROOT, 'quotametics-context');
+const CONTENT_DIR  = path.join(OUTPUT_DIR, 'content');
+const DIST_DIR     = path.join(OUTPUT_DIR, 'dist');
+const CHUB_CONFIG_DIR  = path.join(os.homedir(), '.chub');
 const CHUB_CONFIG_PATH = path.join(CHUB_CONFIG_DIR, 'config.yaml');
 const TODAY = new Date().toISOString().slice(0, 10);
-
-// Modules to generate (first path segment → display name / metadata)
-const MODULE_META = {
-  company: {
-    displayName: 'Company',
-    description: 'ConnectWise Manage Company module — companies, contacts, configurations, sites, and communication methods',
-    tags: 'connectwise,company,contacts,configurations,crm,psa',
-    keyResources: ['Companies', 'Contacts', 'Configurations', 'Sites', 'CommunicationTypes', 'GroupCompanies'],
-    summary: 'Manages CRM data: client companies, contacts, communication methods, and equipment configurations.',
-  },
-  service: {
-    displayName: 'Service',
-    description: 'ConnectWise Manage Service module — tickets, boards, priorities, statuses, SLAs, teams, and notes',
-    tags: 'connectwise,service,tickets,helpdesk,boards,sla,psa',
-    keyResources: ['Tickets', 'Boards', 'Priorities', 'Statuses', 'Teams', 'SLAs', 'Notes', 'TicketTasks'],
-    summary: 'Core help-desk / service-desk module. Tickets are the primary work item; boards organise queues.',
-  },
-  finance: {
-    displayName: 'Finance',
-    description: 'ConnectWise Manage Finance module — invoices, agreements, payments, tax codes, and billing',
-    tags: 'connectwise,finance,invoices,agreements,billing,payments,psa',
-    keyResources: ['Invoices', 'Agreements', 'AgreementAdditions', 'Payments', 'TaxCodes', 'BatchSetups'],
-    summary: 'Handles recurring agreements, one-time invoices, tax codes, and payment records.',
-  },
-  project: {
-    displayName: 'Project',
-    description: 'ConnectWise Manage Project module — projects, phases, project tickets, billing rates, and team members',
-    tags: 'connectwise,project,phases,billing,psa',
-    keyResources: ['Projects', 'Phases', 'ProjectTickets', 'ProjectNotes', 'TeamMembers', 'BillingRates'],
-    summary: 'Tracks project work broken into phases and tickets, with per-project team and billing configuration.',
-  },
-  sales: {
-    displayName: 'Sales',
-    description: 'ConnectWise Manage Sales module — opportunities, orders, activities, quotes, and sales forecasts',
-    tags: 'connectwise,sales,opportunities,quotes,orders,crm,psa',
-    keyResources: ['Opportunities', 'Orders', 'Activities', 'SalesProbabilities', 'Forecasts', 'Stages'],
-    summary: 'CRM pipeline management: opportunities move through stages toward orders/quotes.',
-  },
-  time: {
-    displayName: 'Time',
-    description: 'ConnectWise Manage Time module — time entries, accruals, work types, and work roles',
-    tags: 'connectwise,time,entries,accruals,worktypes,psa',
-    keyResources: ['TimeEntries', 'Accruals', 'WorkTypes', 'WorkRoles', 'TimePeriods'],
-    summary: 'Time tracking against tickets, projects, or agreements. Drives billing and payroll.',
-  },
-  procurement: {
-    displayName: 'Procurement',
-    description: 'ConnectWise Manage Procurement module — products, catalog, purchase orders, and inventory',
-    tags: 'connectwise,procurement,products,inventory,catalog,purchasing,psa',
-    keyResources: ['Products', 'CatalogItems', 'PurchaseOrders', 'Vendors', 'Inventory', 'Subcategories'],
-    summary: 'Product catalog and purchasing: manage items, vendors, and inventory across warehouses.',
-  },
-  schedule: {
-    displayName: 'Schedule',
-    description: 'ConnectWise Manage Schedule module — calendar entries, types, and statuses',
-    tags: 'connectwise,schedule,calendar,dispatch,psa',
-    keyResources: ['ScheduleEntries', 'ScheduleTypes', 'ScheduleStatuses', 'ScheduleColors'],
-    summary: 'Dispatch board and calendar management. Links members to tickets/activities at specific times.',
-  },
-  system: {
-    displayName: 'System',
-    description: 'ConnectWise Manage System module — members, security roles, custom fields, reports, and system config',
-    tags: 'connectwise,system,members,security,customfields,reports,psa',
-    keyResources: ['Members', 'SecurityRoles', 'CustomFields', 'Reports', 'UserDefinedFields', 'MemberTypes'],
-    summary: 'Administration module: user/member management, permissions, custom field definitions, and reporting.',
-  },
-  expense: {
-    displayName: 'Expense',
-    description: 'ConnectWise Manage Expense module — expense entries, expense reports, and expense types',
-    tags: 'connectwise,expense,reports,reimbursement,psa',
-    keyResources: ['ExpenseEntries', 'ExpenseReports', 'ExpenseTypes', 'Classifications'],
-    summary: 'Tracks staff expense claims against tickets or projects, with approval workflow.',
-  },
-};
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function writeFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
-  console.log(`  wrote: ${path.relative(REPO_ROOT, filePath)}`);
 }
 
 function capitalize(s) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
 
-function httpMethodOrder(method) {
-  return { GET: 0, POST: 1, PUT: 2, PATCH: 3, DELETE: 4 }[method] ?? 5;
+function httpMethodOrder(m) {
+  return { GET: 0, POST: 1, PUT: 2, PATCH: 3, DELETE: 4 }[m] ?? 5;
 }
 
 // ─── Step 1: Extract zip ──────────────────────────────────────────────────────
 
 function extractZip() {
   if (!fs.existsSync(ZIP_PATH)) {
-    console.error(`\n❌  Zip not found: ${ZIP_PATH}`);
-    console.error('    Place swagger25.0.5.zip in the repo root and re-run.\n');
+    console.error(`\n❌  Zip not found: ${ZIP_PATH}\n`);
     process.exit(1);
   }
-
   if (fs.existsSync(EXTRACT_DIR)) {
     console.log('📦  swagger-extract/ already exists, skipping extraction.');
     return;
   }
+  console.log('📦  Extracting zip via PowerShell…');
+  execSync(
+    `powershell -NoProfile -Command "Expand-Archive -Path '${ZIP_PATH}' -DestinationPath '${EXTRACT_DIR}' -Force"`,
+    { stdio: 'inherit' }
+  );
+}
 
-  console.log('📦  Extracting swagger zip via PowerShell…');
+// ─── Step 2: Find HTML files ──────────────────────────────────────────────────
+
+function findHtmlFiles(dir) {
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) results.push(...findHtmlFiles(full));
+    else if (entry.name.endsWith('.html')) results.push(full);
+  }
+  return results;
+}
+
+// ─── Step 3: Extract OpenAPI spec from ReDoc HTML ─────────────────────────────
+//
+// ReDoc bakes the spec into the HTML as:
+//   var __redoc_state = { "spec": { "data": { ...openapi... } }, ... };
+//   Redoc.hydrate(__redoc_state, container);
+//
+// We slice the string between those two markers and JSON.parse it.
+
+function extractSpecFromHtml(htmlPath) {
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  const START = '__redoc_state = ';
+  const startIdx = html.indexOf(START);
+  if (startIdx === -1) return null;
+
+  // Find the matching closing brace by counting brace depth
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let i = startIdx + START.length;
+  const end = html.length;
+
+  for (; i < end; i++) {
+    const ch = html[i];
+    if (escape)           { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"')       { inString = !inString; continue; }
+    if (inString)         continue;
+    if (ch === '{')       { depth++; }
+    else if (ch === '}')  { depth--; if (depth === 0) { i++; break; } }
+  }
+
+  const jsonStr = html.slice(startIdx + START.length, i);
   try {
-    execSync(
-      `powershell -NoProfile -Command "Expand-Archive -Path '${ZIP_PATH}' -DestinationPath '${EXTRACT_DIR}' -Force"`,
-      { stdio: 'inherit' }
-    );
+    const state = JSON.parse(jsonStr);
+    // ReDoc stores the spec at state.spec.data (parsed) or state.spec.data
+    return state?.spec?.data ?? null;
   } catch (err) {
-    console.error('❌  PowerShell extraction failed:', err.message);
-    console.error('    Please manually extract swagger25.0.5.zip to swagger-extract/ and re-run.\n');
-    process.exit(1);
+    console.warn(`  ⚠️  JSON parse failed for ${path.basename(htmlPath)}: ${err.message}`);
+    return null;
   }
 }
 
-// ─── Step 2: Find swagger JSON ─────────────────────────────────────────────────
+// ─── Step 4: Build operations list from spec ─────────────────────────────────
 
-function findSwaggerJson(dir) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-  // Prefer files explicitly named swagger.json
-  for (const e of entries) {
-    if (!e.isDirectory() && e.name.toLowerCase() === 'swagger.json') {
-      return path.join(dir, e.name);
-    }
-  }
-  // Any .json file
-  for (const e of entries) {
-    if (!e.isDirectory() && e.name.endsWith('.json')) {
-      return path.join(dir, e.name);
-    }
-  }
-  // Recurse
-  for (const e of entries) {
-    if (e.isDirectory()) {
-      const found = findSwaggerJson(path.join(dir, e.name));
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-// ─── Step 3: Group paths by module ───────────────────────────────────────────
-
-function groupByModule(swagger) {
-  const modules = {};
-
-  for (const [routePath, pathItem] of Object.entries(swagger.paths || {})) {
-    // First non-empty segment: /service/tickets/{id} → "service"
-    const segment = routePath.replace(/^\//, '').split('/')[0].toLowerCase();
-
-    if (!modules[segment]) {
-      modules[segment] = { operations: [] };
-    }
-
+function extractOperations(spec) {
+  const ops = [];
+  for (const [routePath, pathItem] of Object.entries(spec.paths || {})) {
     for (const [method, op] of Object.entries(pathItem)) {
       if (!['get', 'post', 'put', 'patch', 'delete'].includes(method)) continue;
-
-      modules[segment].operations.push({
+      ops.push({
         method: method.toUpperCase(),
         path: routePath,
         summary: (op.summary || '').trim(),
         description: (op.description || '').trim(),
-        tags: op.tags || [],
         parameters: op.parameters || [],
         responses: op.responses || {},
         operationId: op.operationId || '',
       });
     }
   }
-
-  // Sort each module's operations: by path then by HTTP method order
-  for (const mod of Object.values(modules)) {
-    mod.operations.sort((a, b) => {
-      const pathCmp = a.path.localeCompare(b.path);
-      return pathCmp !== 0 ? pathCmp : httpMethodOrder(a.method) - httpMethodOrder(b.method);
-    });
-  }
-
-  return modules;
+  ops.sort((a, b) => {
+    const p = a.path.localeCompare(b.path);
+    return p !== 0 ? p : httpMethodOrder(a.method) - httpMethodOrder(b.method);
+  });
+  return ops;
 }
 
-// ─── Step 4: DOC.md generation ───────────────────────────────────────────────
+// ─── Step 5: DOC.md generation ────────────────────────────────────────────────
 
 const AUTH_SECTION = `## Authentication
 
-All ConnectWise Manage API requests require three HTTP headers:
+ConnectWise Automate API uses **API keys** tied to a specific user. Pass credentials via the \`Authorization\` header:
 
 \`\`\`
-clientid: {your-connectwise-client-id}
-Authorization: Basic {base64(companyId+publicKey+privateKey)}
-Content-Type: application/json
+Authorization: Bearer {your-api-token}
 \`\`\`
 
-Build the Authorization header value:
-
+Obtain a token:
 \`\`\`python
-import base64, requests
+import requests
 
-company_id  = "YourCompanyId"   # ConnectWise company identifier
-public_key  = "yourPublicKey"
-private_key = "yourPrivateKey"
-client_id   = "yourClientId"    # from developer.connectwise.com
-
-token = base64.b64encode(f"{company_id}+{public_key}+{private_key}".encode()).decode()
+r = requests.post(
+    "https://{automate-host}/cwa/api/v1/apitoken",
+    json={"UserName": "username", "Password": "password", "TwoFactorPasscode": ""},
+)
+token = r.json()["AccessToken"]
 
 headers = {
-    "clientid": client_id,
-    "Authorization": f"Basic {token}",
+    "Authorization": f"Bearer {token}",
     "Content-Type": "application/json",
 }
 \`\`\`
 
 \`\`\`javascript
-const token = Buffer.from(\`\${companyId}+\${publicKey}+\${privateKey}\`).toString('base64');
-const headers = {
-  clientid: clientId,
-  Authorization: \`Basic \${token}\`,
-  'Content-Type': 'application/json',
-};
+const r = await fetch('https://{automate-host}/cwa/api/v1/apitoken', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ UserName: 'user', Password: 'pass', TwoFactorPasscode: '' }),
+});
+const { AccessToken } = await r.json();
+const headers = { Authorization: \`Bearer \${AccessToken}\`, 'Content-Type': 'application/json' };
 \`\`\``;
 
-const PAGINATION_SECTION = `## Pagination, Filtering & Sorting
+const PAGINATION_SECTION = `## Pagination & Filtering
 
-All list endpoints support standard query parameters:
+List endpoints support standard query parameters:
 
 | Parameter | Example | Description |
 |-----------|---------|-------------|
-| \`page\` | \`page=2\` | Page number, 1-based |
-| \`pageSize\` | \`pageSize=50\` | Records per page (max 1000, default 25) |
-| \`conditions\` | \`conditions=status/name="New"\` | SQL-like filter expression |
-| \`orderBy\` | \`orderBy=id desc\` | Sort field and direction |
-| \`fields\` | \`fields=id,summary,status\` | Comma-separated field projection |
-| \`childConditions\` | \`childConditions=types/id=1\` | Filter on child collection members |
+| \`page\` | \`page=2\` | Page number (1-based) |
+| \`pagesize\` | \`pagesize=100\` | Records per page |
+| \`condition\` | \`condition=Status='Open'\` | Filter expression |
+| \`orderby\` | \`orderby=Id desc\` | Sort field and direction |
 
 \`\`\`python
-# Paginated fetch with filtering
-def get_all(base_url, endpoint, headers, conditions=None):
+def get_all(base_url, endpoint, headers, condition=None):
     results, page = [], 1
     while True:
-        params = {"page": page, "pageSize": 100}
-        if conditions:
-            params["conditions"] = conditions
+        params = {"page": page, "pagesize": 100}
+        if condition:
+            params["condition"] = condition
         r = requests.get(f"{base_url}{endpoint}", headers=headers, params=params)
         r.raise_for_status()
         batch = r.json()
@@ -289,136 +211,93 @@ def get_all(base_url, endpoint, headers, conditions=None):
         results.extend(batch)
         page += 1
     return results
-
-# Example: all open high-priority tickets
-tickets = get_all(base_url, "/service/tickets", headers,
-                  conditions='status/name not in ("Closed","Resolved") and priority/name="High"')
-\`\`\`
-
-**Conditions syntax:**
-- String equality: \`name="Acme Corp"\`
-- Contains: \`name contains "Acme"\`
-- In list: \`status/id in (1,2,3)\`
-- Date range: \`dateEntered > [2024-01-01T00:00:00Z]\`
-- Child collection: \`types/id=4\``;
+\`\`\``;
 
 const ERROR_SECTION = `## Error Handling
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Bad request — validate required fields and \`conditions\` syntax |
-| 401 | Unauthorized — check \`clientid\` and \`Authorization\` headers |
-| 403 | Forbidden — API key lacks permission for this operation |
-| 404 | Not found — record with given ID does not exist |
-| 409 | Conflict — duplicate record or constraint violation |
-| 422 | Validation error — response body has field-level details |
-| 500 | Server error — retry with exponential back-off |
+| 400 | Bad request — check required fields and filter syntax |
+| 401 | Unauthorized — token expired or invalid |
+| 403 | Forbidden — user lacks permission |
+| 404 | Not found — resource ID does not exist |
+| 500 | Server error — retry with back-off |
 
 \`\`\`python
 import time
 
-def api_request(method, url, headers, **kwargs):
+def api_call(method, url, headers, **kwargs):
     for attempt in range(3):
-        try:
-            r = requests.request(method, url, headers=headers, **kwargs)
-            r.raise_for_status()
-            return r.json()
-        except requests.HTTPError as e:
-            status = e.response.status_code
-            if status == 401:
-                raise RuntimeError("Check clientid and Authorization headers") from e
-            if status == 404:
-                return None           # caller decides how to handle missing records
-            if status == 429 or status >= 500:
-                time.sleep(2 ** attempt)
-                continue
-            raise                     # 400, 403, 409, 422 are caller errors
-    raise RuntimeError(f"Request failed after retries: {url}")
+        r = requests.request(method, url, headers=headers, **kwargs)
+        if r.status_code == 401:
+            raise RuntimeError("Token expired — re-authenticate")
+        if r.status_code >= 500:
+            time.sleep(2 ** attempt)
+            continue
+        r.raise_for_status()
+        return r.json() if r.content else None
+    raise RuntimeError(f"Failed after retries: {url}")
 \`\`\``;
 
-function pickExampleOps(ops) {
-  const listOps   = ops.filter(o => o.method === 'GET' && !o.path.match(/\{[^}]+\}$/)).slice(0, 3);
-  const getByIdOps = ops.filter(o => o.method === 'GET' && o.path.match(/\{id\}$/)).slice(0, 2);
-  const createOps = ops.filter(o => o.method === 'POST' && !o.path.match(/\{[^}]+\}/)).slice(0, 2);
-  const patchOps  = ops.filter(o => o.method === 'PATCH').slice(0, 1);
-  const deleteOps = ops.filter(o => o.method === 'DELETE').slice(0, 1);
-  return { listOps, getByIdOps, createOps, patchOps, deleteOps };
-}
-
 function opsTable(ops) {
-  if (ops.length === 0) return '';
+  if (!ops.length) return '';
   const rows = ops.map(o => `| \`${o.method}\` | \`${o.path}\` | ${o.summary} |`).join('\n');
   return `| Method | Path | Description |\n|--------|------|-------------|\n${rows}`;
 }
 
-function generateDocMd(moduleName, moduleData, swaggerVersion) {
-  const meta = MODULE_META[moduleName] || {
-    displayName: capitalize(moduleName),
-    description: `ConnectWise Manage ${capitalize(moduleName)} module`,
-    tags: `connectwise,${moduleName},psa`,
-    keyResources: [],
-    summary: `${capitalize(moduleName)} module REST API.`,
-  };
+function generateDocMd(moduleName, ops, spec) {
+  const title = spec.info?.title || `ConnectWise Automate — ${moduleName}`;
+  const apiVersion = spec.info?.version || '25.0.5';
+  const baseUrl = spec.basePath
+    ? `https://{automate-host}${spec.basePath}`
+    : 'https://{automate-host}/cwa/api/v1';
 
-  const ops = moduleData.operations;
-  const { listOps, getByIdOps, createOps, patchOps, deleteOps } = pickExampleOps(ops);
+  const listOps    = ops.filter(o => o.method === 'GET' && !o.path.match(/\{[^}]+\}$/)).slice(0, 3);
+  const getByIdOps = ops.filter(o => o.method === 'GET' && o.path.match(/\{[^}]+\}$/)).slice(0, 2);
+  const createOps  = ops.filter(o => o.method === 'POST').slice(0, 2);
+  const patchOps   = ops.filter(o => o.method === 'PATCH').slice(0, 1);
+  const deleteOps  = ops.filter(o => o.method === 'DELETE').slice(0, 1);
 
-  // Build a representative GET example from the first list endpoint
   const firstList = listOps[0];
-  const firstCreate = createOps[0];
-
-  const getExample = firstList
-    ? `\`\`\`python
-base_url = "https://na.myconnectwise.net/v4_6_release/apis/3.0"
+  const getExample = firstList ? `\`\`\`python
+base_url = "${baseUrl}"
 
 r = requests.get(
     f"{base_url}${firstList.path}",
     headers=headers,
-    params={"pageSize": 50, "orderBy": "id desc"},
+    params={"pagesize": 100},
 )
 r.raise_for_status()
-items = r.json()   # list of dicts
-\`\`\``
-    : '';
+items = r.json()
+\`\`\`` : '';
 
-  const createExample = firstCreate
-    ? `\`\`\`python
-payload = {
-    # Required fields depend on your board/type configuration — see reference
-}
-r = requests.post(
-    f"{base_url}${firstCreate.path}",
-    headers=headers,
-    json=payload,
-)
+  const firstCreate = createOps[0];
+  const createExample = firstCreate ? `\`\`\`python
+payload = {}  # see reference file for required fields
+r = requests.post(f"{base_url}${firstCreate.path}", headers=headers, json=payload)
 r.raise_for_status()
 new_record = r.json()
-print(new_record["id"])
-\`\`\``
-    : '';
+\`\`\`` : '';
 
   return `---
-name: connectwise-${moduleName}
-description: "${meta.description}"
+name: connectwise-automate-${moduleName.toLowerCase()}
+description: "ConnectWise Automate ${moduleName} API — ${ops.length} operations for managing ${moduleName.toLowerCase()} via the Automate RMM platform"
 metadata:
   languages: "python,javascript"
-  versions: "${swaggerVersion}"
+  versions: "${apiVersion}"
   revision: 1
   updated-on: "${TODAY}"
   source: maintainer
-  tags: "${meta.tags}"
+  tags: "connectwise,automate,rmm,${moduleName.toLowerCase()},psa"
 ---
 
-# ConnectWise Manage — ${meta.displayName} Module
+# ConnectWise Automate — ${moduleName}
 
-${meta.summary}
+${spec.info?.description ? spec.info.description.split('\n')[0] : `REST API for the ConnectWise Automate ${moduleName} module.`}
 
-**API version:** ${swaggerVersion} | **Operations in this module:** ${ops.length}
+**API version:** ${apiVersion} | **Operations:** ${ops.length}
 
-**Key resources:** ${meta.keyResources.join(', ')}
-
-**Base URL:** \`https://{cw-host}/v4_6_release/apis/3.0\`
-Common hosts: \`na.myconnectwise.net\`, \`eu.myconnectwise.net\`, \`au.myconnectwise.net\`
+**Base URL:** \`${baseUrl}\`
 
 ---
 
@@ -432,23 +311,11 @@ ${PAGINATION_SECTION}
 
 ## Common Operations
 
-${listOps.length > 0 ? `### List / Search\n\n${opsTable(listOps)}\n\n${getExample}` : ''}
-
-${getByIdOps.length > 0 ? `### Get by ID\n\n${opsTable(getByIdOps)}` : ''}
-
-${createOps.length > 0 ? `### Create\n\n${opsTable(createOps)}\n\n${createExample}` : ''}
-
-${patchOps.length > 0 ? `### Update (PATCH)\n\n${opsTable(patchOps)}\n\nUse PATCH to update individual fields without sending the full object:
-
-\`\`\`python
-r = requests.patch(
-    f"{base_url}${patchOps[0]?.path || ''}",
-    headers=headers,
-    json=[{"op": "replace", "path": "/fieldName", "value": "newValue"}],
-)
-\`\`\`` : ''}
-
-${deleteOps.length > 0 ? `### Delete\n\n${opsTable(deleteOps)}` : ''}
+${listOps.length    ? `### List / Search\n\n${opsTable(listOps)}\n\n${getExample}\n` : ''}
+${getByIdOps.length ? `### Get by ID\n\n${opsTable(getByIdOps)}\n` : ''}
+${createOps.length  ? `### Create\n\n${opsTable(createOps)}\n\n${createExample}\n` : ''}
+${patchOps.length   ? `### Update (PATCH)\n\n${opsTable(patchOps)}\n` : ''}
+${deleteOps.length  ? `### Delete\n\n${opsTable(deleteOps)}\n` : ''}
 
 ---
 
@@ -456,224 +323,178 @@ ${ERROR_SECTION}
 
 ---
 
-## Reference Files
+## Reference
 
-Full endpoint listings are in the reference files (fetch with \`chub get quotametics/connectwise-${moduleName} --full\`):
-
-- \`references/${moduleName}-endpoints.md\` — all ${ops.length} operations with parameters and response types
+Full endpoint listing with all parameters:
+\`references/${moduleName.toLowerCase()}-endpoints.md\` (fetch with \`chub get quotametics/connectwise-automate-${moduleName.toLowerCase()} --full\`)
 `;
 }
 
-// ─── Step 5: Reference file generation ───────────────────────────────────────
+// ─── Step 6: Reference file ───────────────────────────────────────────────────
 
 function paramList(params) {
-  if (!params || params.length === 0) return '';
-  const lines = params.map(p => {
-    const req = p.required ? ' **required**' : '';
-    const type = p.type || (p.schema && (p.schema.$ref?.split('/').pop() || p.schema.type)) || 'string';
+  return params.map(p => {
+    const type = p.schema?.type || p.type || 'string';
+    const req  = p.required ? ' **required**' : '';
     return `  - \`${p.name}\` (${p.in}, ${type}${req}): ${p.description || ''}`;
-  });
-  return lines.join('\n');
+  }).join('\n');
 }
 
 function responseInfo(responses) {
-  const successCode = Object.keys(responses || {}).find(c => c.startsWith('2')) || '200';
-  const resp = responses?.[successCode];
+  const code = Object.keys(responses || {}).find(c => c.startsWith('2')) || '200';
+  const resp = responses?.[code];
   if (!resp) return '';
-  const schema = resp.schema;
-  if (!schema) return `→ ${successCode} (no body)`;
+  const schema = resp.schema || resp.content?.['application/json']?.schema;
+  if (!schema) return `${code} (no body)`;
   if (schema.type === 'array') {
     const item = schema.items?.$ref?.split('/').pop() || schema.items?.type || 'object';
-    return `→ ${successCode} array of \`${item}\``;
+    return `${code} array of \`${item}\``;
   }
-  const ref = schema.$ref?.split('/').pop() || schema.type || 'object';
-  return `→ ${successCode} \`${ref}\``;
+  return `${code} \`${schema.$ref?.split('/').pop() || schema.type || 'object'}\``;
 }
 
-function generateReferenceMd(moduleName, moduleData, swaggerVersion) {
-  const ops = moduleData.operations;
-  const meta = MODULE_META[moduleName];
-  const displayName = meta?.displayName || capitalize(moduleName);
+function generateReferenceMd(moduleName, ops, spec) {
+  const apiVersion = spec.info?.version || '25.0.5';
+  let md = `# ConnectWise Automate — ${moduleName}: All Endpoints\n\n`;
+  md += `API version: ${apiVersion} | Total operations: ${ops.length}\n\n---\n\n`;
 
-  // Group by second path segment (resource)
+  // Group by top-level resource path
   const byResource = new Map();
   for (const op of ops) {
     const parts = op.path.replace(/^\//, '').split('/');
-    const resource = parts[1] || parts[0];
+    const resource = parts[0] || 'root';
     if (!byResource.has(resource)) byResource.set(resource, []);
     byResource.get(resource).push(op);
   }
 
-  let md = `# ConnectWise Manage — ${displayName} Module: All Endpoints\n\n`;
-  md += `API version: ${swaggerVersion} | Total operations: ${ops.length}\n\n`;
-  md += `---\n\n`;
-
   for (const [resource, resourceOps] of byResource) {
     md += `## ${resource}\n\n`;
-
     for (const op of resourceOps) {
       md += `### \`${op.method} ${op.path}\`\n`;
       if (op.summary) md += `${op.summary}\n\n`;
 
       const pathParams  = op.parameters.filter(p => p.in === 'path');
       const queryParams = op.parameters.filter(p => p.in === 'query');
-      const bodyParam   = op.parameters.find(p => p.in === 'body');
+      const bodyParam   = op.parameters.find(p  => p.in === 'body');
 
-      if (pathParams.length > 0) {
-        md += `**Path parameters:**\n${paramList(pathParams)}\n\n`;
-      }
-      if (queryParams.length > 0) {
-        md += `**Query parameters:**\n${paramList(queryParams)}\n\n`;
-      }
+      if (pathParams.length)  md += `**Path parameters:**\n${paramList(pathParams)}\n\n`;
+      if (queryParams.length) md += `**Query parameters:**\n${paramList(queryParams)}\n\n`;
       if (bodyParam) {
-        const bodyType = bodyParam.schema?.$ref?.split('/').pop()
-          || bodyParam.schema?.type
-          || 'object';
-        md += `**Request body:** \`${bodyType}\`\n\n`;
+        const bt = bodyParam.schema?.$ref?.split('/').pop() || bodyParam.schema?.type || 'object';
+        md += `**Request body:** \`${bt}\`\n\n`;
       }
-
       const resp = responseInfo(op.responses);
       if (resp) md += `**Response:** ${resp}\n\n`;
-
       md += `---\n\n`;
     }
   }
-
   return md;
 }
 
-// ─── Step 6: Update ~/.chub/config.yaml ──────────────────────────────────────
+// ─── Step 7: Update ~/.chub/config.yaml ──────────────────────────────────────
 
-function updateChubConfig(distPath) {
+function updateChubConfig() {
   fs.mkdirSync(CHUB_CONFIG_DIR, { recursive: true });
-
-  // Normalise to forward slashes for cross-platform YAML readability
-  const normalised = distPath.replace(/\\/g, '/');
+  const distNorm = DIST_DIR.replace(/\\/g, '/');
 
   if (fs.existsSync(CHUB_CONFIG_PATH)) {
     const existing = fs.readFileSync(CHUB_CONFIG_PATH, 'utf8');
     if (existing.includes('quotametics')) {
-      console.log('\nℹ️   ~/.chub/config.yaml already contains a quotametics source, skipping update.');
+      console.log('ℹ️   ~/.chub/config.yaml already has quotametics source.');
       return;
     }
-    // Append to end (simple and safe for any existing format)
-    const addition = `  - name: quotametics\n    path: "${normalised}"\n`;
-    const updated = existing.trimEnd() + '\n' + addition;
-    fs.writeFileSync(CHUB_CONFIG_PATH, updated, 'utf8');
-    console.log('\n✅  Updated ~/.chub/config.yaml with quotametics source.');
+    fs.writeFileSync(CHUB_CONFIG_PATH,
+      existing.trimEnd() + `\n  - name: quotametics\n    path: "${distNorm}"\n`);
   } else {
-    const config = [
+    fs.writeFileSync(CHUB_CONFIG_PATH, [
       'sources:',
       '  - name: community',
       '    url: https://cdn.aichub.org/v1',
       `  - name: quotametics`,
-      `    path: "${normalised}"`,
+      `    path: "${distNorm}"`,
       '',
-    ].join('\n');
-    fs.writeFileSync(CHUB_CONFIG_PATH, config, 'utf8');
-    console.log('\n✅  Created ~/.chub/config.yaml with community + quotametics sources.');
+    ].join('\n'));
   }
+  console.log('✅  Updated ~/.chub/config.yaml');
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log('═══════════════════════════════════════════════');
-  console.log('  ConnectWise → context-hub generator');
+  console.log('  ConnectWise Automate → context-hub generator');
   console.log('═══════════════════════════════════════════════\n');
 
-  // 1. Extract
   extractZip();
 
-  // 2. Find swagger.json
-  const swaggerPath = findSwaggerJson(EXTRACT_DIR);
-  if (!swaggerPath) {
-    console.error('❌  Could not find a .json file inside swagger-extract/');
-    console.error('    The zip may not contain a swagger.json — check its contents.\n');
+  const htmlFiles = findHtmlFiles(EXTRACT_DIR);
+  if (!htmlFiles.length) {
+    console.error('❌  No HTML files found in swagger-extract/');
     process.exit(1);
   }
-  console.log(`\n📄  Swagger file: ${path.relative(REPO_ROOT, swaggerPath)}`);
-
-  // 3. Parse
-  console.log('🔍  Parsing swagger JSON…');
-  const swagger = JSON.parse(fs.readFileSync(swaggerPath, 'utf8'));
-  const swaggerVersion = swagger.info?.version || '25.0.5';
-  const pathCount = Object.keys(swagger.paths || {}).length;
-  console.log(`    API title:    ${swagger.info?.title || 'ConnectWise Manage'}`);
-  console.log(`    API version:  ${swaggerVersion}`);
-  console.log(`    Total paths:  ${pathCount}`);
-
-  // 4. Group by module
-  const modules = groupByModule(swagger);
-  const moduleNames = Object.keys(modules).sort();
-  console.log(`    Modules found: ${moduleNames.join(', ')}\n`);
-
-  // 5. Generate content
-  console.log('📝  Generating content files…\n');
+  console.log(`\n📄  Found ${htmlFiles.length} HTML module files\n`);
+  console.log('📝  Extracting specs and generating docs…\n');
 
   let docCount = 0;
-  for (const moduleName of moduleNames) {
-    const moduleData = modules[moduleName];
-    const opCount = moduleData.operations.length;
-    if (opCount === 0) continue;
 
-    const entryDir = path.join(CONTENT_DIR, 'quotametics', 'docs', `connectwise-${moduleName}`);
+  for (const htmlFile of htmlFiles) {
+    const moduleName = path.basename(htmlFile, '.html');
+    process.stdout.write(`  [${moduleName}] extracting spec… `);
+
+    const spec = extractSpecFromHtml(htmlFile);
+    if (!spec) {
+      console.log('⚠️  skipped (could not extract spec)');
+      continue;
+    }
+
+    const ops = extractOperations(spec);
+    if (!ops.length) {
+      console.log('⚠️  skipped (no operations)');
+      continue;
+    }
+    console.log(`${ops.length} operations`);
+
+    const entryDir = path.join(CONTENT_DIR, 'quotametics', 'docs', `connectwise-automate-${moduleName.toLowerCase()}`);
     const refDir   = path.join(entryDir, 'references');
 
-    console.log(`  [${moduleName}] — ${opCount} operations`);
-
-    writeFile(
-      path.join(entryDir, 'DOC.md'),
-      generateDocMd(moduleName, moduleData, swaggerVersion)
-    );
-    writeFile(
-      path.join(refDir, `${moduleName}-endpoints.md`),
-      generateReferenceMd(moduleName, moduleData, swaggerVersion)
-    );
+    writeFile(path.join(entryDir, 'DOC.md'),
+      generateDocMd(moduleName, ops, spec));
+    writeFile(path.join(refDir, `${moduleName.toLowerCase()}-endpoints.md`),
+      generateReferenceMd(moduleName, ops, spec));
 
     docCount++;
-    console.log();
   }
 
-  // 6. Build registry
+  console.log(`\n✅  Generated ${docCount} module docs\n`);
+
+  // Build registry
   console.log('🔨  Building chub registry…');
   const chubBin = process.platform === 'win32' ? 'chub.cmd' : 'chub';
   try {
-    execSync(
-      `${chubBin} build "${CONTENT_DIR}" -o "${DIST_DIR}"`,
-      { stdio: 'inherit', cwd: REPO_ROOT }
-    );
-    console.log('✅  Registry built successfully.');
-  } catch (err) {
-    // Fallback: try via npx
+    execSync(`${chubBin} build "${CONTENT_DIR}" -o "${DIST_DIR}"`,
+      { stdio: 'inherit', cwd: REPO_ROOT });
+  } catch {
     try {
-      execSync(
-        `npx chub build "${CONTENT_DIR}" -o "${DIST_DIR}"`,
-        { stdio: 'inherit', cwd: REPO_ROOT }
-      );
-      console.log('✅  Registry built (via npx).');
+      execSync(`npx chub build "${CONTENT_DIR}" -o "${DIST_DIR}"`,
+        { stdio: 'inherit', cwd: REPO_ROOT });
     } catch (err2) {
-      console.warn('\n⚠️   chub build failed. Run manually:');
-      console.warn(`    chub build "${CONTENT_DIR}" -o "${DIST_DIR}"\n`);
+      console.warn(`⚠️  chub build failed — run manually:\n    chub build "${CONTENT_DIR}" -o "${DIST_DIR}"\n`);
     }
   }
 
-  // 7. Update config
-  updateChubConfig(DIST_DIR);
+  updateChubConfig();
 
-  // Summary
   console.log('\n═══════════════════════════════════════════════');
-  console.log(`  Done! Generated ${docCount} ConnectWise module docs.`);
+  console.log(`  Done! ${docCount} ConnectWise Automate module docs`);
   console.log('═══════════════════════════════════════════════\n');
   console.log('Try:');
   console.log('  chub search connectwise');
-  console.log('  chub get quotametics/connectwise-service');
-  console.log('  chub get quotametics/connectwise-company');
-  console.log('  chub get quotametics/connectwise-service --full');
-  console.log('');
+  console.log('  chub get quotametics/connectwise-automate-tickets');
+  console.log('  chub get quotametics/connectwise-automate-computers');
+  console.log('  chub get quotametics/connectwise-automate-tickets --full\n');
 }
 
 main().catch(err => {
-  console.error('\n❌  Fatal error:', err.message);
+  console.error('\n❌  Fatal:', err.message);
   process.exit(1);
 });

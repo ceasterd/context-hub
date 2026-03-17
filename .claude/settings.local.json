@@ -9,7 +9,8 @@
       "Bash(powershell.exe -Command \"Expand-Archive -Path ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger25.0.5.zip'' -DestinationPath ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger-extract'' -Force; Write-Host ''Done''\")",
       "Bash(cmd /c \"powershell -Command \"\"Expand-Archive -Path ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger25.0.5.zip'' -DestinationPath ''C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\\\\swagger-extract'' -Force; Write-Host Done\"\"\")",
       "Bash(node -e \"const fs = require\\(''fs''\\); console.log\\(fs.existsSync\\(''C:/Users/Carl/context-hub/context-hub/swagger25.0.5.zip''\\) ? ''found'' : ''not found''\\)\")",
-      "Bash(dir \"C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\")"
+      "Bash(dir \"C:\\\\Users\\\\Carl\\\\context-hub\\\\context-hub\")",
+      "WebFetch(domain:developer.connectwise.com)"
     ]
   }
 }
